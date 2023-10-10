@@ -1,0 +1,527 @@
+raiz: main.py
+
+# Importa as bibliotecas necessárias
+import streamlit as st
+import pandas as pd
+import os
+
+# Carrega os dados dos arquivos CSV
+def load_data(file_path):
+    if os.path.exists(file_path):
+        df = pd.read_csv(file_path)
+    else:
+        df = pd.DataFrame()
+    return df
+
+# Página principal do aplicativo Streamlit
+def main():
+    st.title('Sistema Inteligente de Cadastro Escolar')
+
+    st.markdown('''
+        Este aplicativo permite realizar o cadastro de escolas, turmas e alunos.
+        Selecione uma opção no menu à esquerda para começar.
+    ''')
+
+    # Carrega os dados das escolas, turmas e alunos
+    schools_df = load_data('./banco_dados/escolas.csv')
+    classes_df = load_data('./banco_dados/turmas.csv')
+    students_df = load_data('./banco_dados/alunos.csv')
+
+    # Faz o merge dos dados em um único DataFrame
+    df = pd.merge(schools_df, classes_df, on='school_id', how='outer')
+    df = pd.merge(df, students_df, on=['school_id', 'class_id'], how='outer')
+
+    st.markdown('## Visão Geral')
+    st.write(df)
+
+    st.markdown('## Instruções')
+    st.markdown('''
+        1. Selecione o tipo de cadastro no menu à esquerda (Escola, Turma ou Aluno).
+        2. Preencha os campos necessários.
+        3. Clique no botão "Cadastrar" para salvar as informações.
+        4. Você pode visualizar todas as informações cadastradas na página principal.
+    ''')
+
+    st.markdown('## Contato/Suporte')
+    st.markdown('''
+        Se você encontrar algum problema ou tiver alguma sugestão, entre em contato conosco pelo e-mail suporte@cadastroescolar.com.
+    ''')
+
+if __name__ == "__main__":
+    main()
+
+
+
+./page/cadastro.py
+
+# Importa as bibliotecas necessárias
+import streamlit as st
+import pandas as pd
+from src.cadastro_escolas import register_school
+from src.cadastro_turmas import register_class
+from src.cadastro_alunos import register_student
+
+
+# ---------- CONFIGURAÇÃO GERAL DO STREAMLIT ----------# 
+    # Configuração geral do Streamlit
+st.title('Cadastrar nova Entrada')
+st.markdown('Aqui é possível realizar o cadastro de um novo registro. \
+            Para começar selecione o tipo de entrada, em seguida preencha \
+            os dados solicitados e clique no botão para salvar as informações')
+
+# # Habilita o editor na barra lateral da página
+# sidebar_editor()
+
+# Se a opção de edição não estiver ativa, permite um novo cadastro
+
+register_type = st.selectbox('Selecione o tipo de cadastro',
+            index=None,
+            placeholder="Selecione uma opção para começar",
+            options=['Escola', 'Turma', 'Aluno'])
+
+# Usa as funções para liberar os inputs e em seguida salvá-los nos respectivos bancos de dados.
+if register_type == 'Escola':
+    register_school()
+elif register_type == 'Turma':
+    register_class()
+elif register_type == 'Aluno':
+    register_student()
+
+
+./page/aulas.py
+
+import streamlit as st
+import pandas as pd
+import os
+import uuid
+from fpdf import FPDF
+from src.cadastro_aulas import register_lesson
+
+# Função para salvar informações da aula
+def save_lesson(lesson_info):
+    unique_id = str(uuid.uuid4())  # Gera um ID único
+    lesson_info['lesson_id'] = unique_id  # Adiciona o ID único ao dicionário lesson_info
+
+    # Verifica se o arquivo 'aulas.csv' existe
+    if os.path.exists('./banco_dados/aulas.csv'):
+        # Se existir, carrega o arquivo
+        lessons_df = pd.read_csv('./banco_dados/aulas.csv')
+    else:
+        # Se não existir, cria um novo DataFrame com as colunas especificadas e salva como 'aulas.csv'
+        lessons_df = pd.DataFrame(columns=list(lesson_info.keys()))
+        lessons_df.to_csv('./banco_dados/aulas.csv', index=False)
+
+    # Cria uma nova linha com as informações da aula e adiciona ao DataFrame
+    new_row = pd.DataFrame(lesson_info, index=[0])
+    lessons_df.loc[len(lessons_df)] = new_row.iloc[0]
+
+    # Reorganiza as colunas para tornar 'lesson_id' a primeira coluna
+    cols = ['lesson_id'] + [col for col in lessons_df.columns if col != 'lesson_id']
+    lessons_df = lessons_df[cols]
+
+    # Salva o DataFrame atualizado como 'aulas.csv'
+    lessons_df.to_csv('./banco_dados/aulas.csv', index=False)
+    return None
+
+# Função para criar um PDF com as informações da aula
+def create_pdf(lesson_info):
+    pdf = FPDF()
+
+    pdf.add_page()
+
+    pdf.set_font("Arial", size=12)
+    
+    for key, value in lesson_info.items():
+        if key != 'lesson_id':
+            pdf.cell(200, 10, txt=key + ": " + str(value), ln=True)
+
+    pdf.output("./banco_dados/" + lesson_info['lesson_id'] + ".pdf")
+
+# Página de cadastro de aulas do aplicativo Streamlit
+register_lesson()
+
+
+./src/cadastro_escola.py
+
+# Importa as bibliotecas necessárias
+import streamlit as st
+import sqlalchemy as db
+import pandas as pd
+import uuid
+import os
+
+def save_results(results_df, school_info):
+    unique_id = str(uuid.uuid4())  # Gera o ID único
+    school_info['school_id'] = unique_id  # Adiciona o ID no dicionário school_info
+
+    # Adiciona as informações da escola ao DataFrame
+    results_df.loc[len(results_df)] = school_info
+
+    # Cria uma nova lista de nomes de colunas com "ID" como a primeira.
+    cols = ['school_id'] + [col for col in results_df.columns if col != 'school_id']
+    results_df = results_df[cols] # Reorganiza as colunas do DF 
+
+    results_df.to_csv('./banco_dados/escolas.csv', index=False)
+    return results_df  # Retorna o DataFrame atualizado
+
+# Para ler os dados da planilha
+@st.cache_resource()
+def load_data():
+    if os.path.exists('./banco_dados/escolas.csv'):
+        df = pd.read_csv('./banco_dados/escolas.csv')
+    else:
+        df = pd.DataFrame(columns=['school_id', 'nome', 'ano', 'turno', 'estado', 'cidade', 'logradouro', 'numero', 'bairro'])
+        df.to_csv('./banco_dados/escolas.csv', index=None)
+    return df
+
+def register_school():    
+    school_info = {}
+    school_info['nome'] = st.text_input('Nome da Escola *')
+
+    # Only accept integer values for "Ano de atuação" and "Número"
+    school_info['ano'] = st.selectbox('Ano de atuação *', [2023,2024,2025,2026],
+                                      index=None, placeholder='Selecione o ano')
+        
+    # Only accept values from a predefined list for "Turno de trabalho"
+    school_info['turno'] = st.selectbox('Turno de trabalho *', ['Manhã', 'Tarde', 'Noite'],
+                                        index=None, placeholder='Selecione o turno')
+    st.write('**Adicione informações sobre o endereço da escola.**')
+    school_info['estado'] = st.selectbox('Estado *', ['Acre',
+                                                    'Alagoas',
+                                                    'Amapá',
+                                                    'Amazonas',
+                                                    'Bahia',
+                                                    'Ceará',
+                                                    'Distrito Federal',
+                                                    'Espírito Santo',
+                                                    'Goiás',
+                                                    'Maranhão',
+                                                    'Mato Grosso',
+                                                    'Mato Grosso do Sul',
+                                                    'Minas Gerais',
+                                                    'Pará',
+                                                    'Paraíba',
+                                                    'Paraná',
+                                                    'Pernambuco',
+                                                    'Piauí',
+                                                    'Rio de Janeiro',
+                                                    'Rio Grande do Norte',
+                                                    'Rio Grande do Sul',
+                                                    'Rondônia',
+                                                    'Roraima',
+                                                    'Santa Catarina',
+                                                    'São Paulo',
+                                                    'Sergipe',
+                                                    'Tocantins'],index=None, placeholder='Selecione o estado')
+
+    school_info['cidade'] = st.text_input('Cidade *')
+    school_info['logradouro'] = st.text_input('Logradouro')
+    school_info['numero'] = st.number_input('Número', step=10)
+    school_info['bairro'] = st.text_input('Bairro')
+    # Criação de campos obrigatórios para habilitar o botão de cadastro
+    if school_info['nome'] and school_info['ano'] and school_info['turno'] and school_info['estado'] and school_info['cidade']:
+        if st.button("Cadastrar Escola"):
+            results_df = load_data()
+            if school_info['nome'] in results_df['nome'].values:
+                st.error('Escola já cadastrada no banco de dados.')
+            else:
+                save_results(results_df, school_info)        
+
+
+./src/cadastro_turma.py
+
+
+# Importa as bibliotecas necessárias
+import streamlit as st
+import sqlalchemy as db
+import uuid
+import PySimpleGUI as sg
+import pandas as pd
+import os
+import uuid
+
+# Função para salvar informações da turma
+def save_class(school_id, class_info):
+    unique_id = str(uuid.uuid4())  # Gera um ID único
+    class_info['class_id'] = unique_id  # Adiciona o ID único ao dicionário class_info
+    class_info['school_id'] = school_id  # Adiciona o ID da escola ao dicionário
+
+    # Verifica se o arquivo 'turmas.csv' existe
+    if os.path.exists('./banco_dados/turmas.csv'):
+        # Se existir, carrega o arquivo
+        classes_df = pd.read_csv('./banco_dados/turmas.csv')
+    else:
+        # Se não existir, cria um novo DataFrame com as colunas especificadas e salva como 'turmas.csv'
+        classes_df = pd.DataFrame(columns=list(class_info.keys()))
+        classes_df.to_csv('./banco_dados/turmas.csv', index=False)
+
+    # Cria uma nova linha com as informações da turma e adiciona ao DataFrame
+    new_row = pd.DataFrame(class_info, index=[0])
+    classes_df.loc[len(classes_df)] = new_row.iloc[0]
+
+    # Reorganiza as colunas para tornar 'school_id' e 'class_id' as primeiras colunas
+    cols = ['school_id', 'class_id'] + [col for col in classes_df.columns if col not in ['school_id', 'class_id']]
+    classes_df = classes_df[cols]
+
+    # Salva o DataFrame atualizado como 'turmas.csv'
+    classes_df.to_csv('./banco_dados/turmas.csv', index=False)
+    return None
+
+# Função para registrar uma nova turma
+def register_class():
+    # Verifica se o arquivo 'escolas.csv' existe antes de tentar carregá-lo
+    if not os.path.exists('./banco_dados/escolas.csv'):
+        st.error('Escola ainda não cadastrada.')
+        return
+
+    # Carrega o arquivo 'escolas.csv'
+    schools_df = pd.read_csv('./banco_dados/escolas.csv')
+
+    # Cria um dicionário para mapear os IDs e os nomes de cada escola
+    school_dict = pd.Series(schools_df.school_id.values, index=schools_df['nome']).to_dict()
+
+    # Exibe o nome das escolas na interface do Streamlit e permite ao usuário selecionar uma escola
+    selected_school_name = st.selectbox('Selecione a Escola *', list(school_dict.keys()))
+
+    # Obtém o ID da escola selecionada 
+    school_id = school_dict[selected_school_name]
+
+    class_info = {}    
+
+    # Permite ao usuário selecionar o nível de ensino da turma
+    class_info['escolaridade'] = st.selectbox('Selecione o Nível do Ensino *', ['Fundamental 1','Fundamental 2','Médio'],
+                                              index=None, placeholder='Selecione o Nível do Ensino')
+
+    if class_info['escolaridade']:
+    # Mapeia cada nível de ensino às suas séries correspondentes e permite ao usuário selecionar a série da turma
+        series_options = {'Fundamental 1': ['1° Ano','2° Ano', '3° Ano','4° Ano','5° Ano'],
+                          'Fundamental 2': ['6° Ano','7° Ano', '8° Ano','9° Ano'],
+                          'Médio': ['1° Ano','2° Ano','3° Ano']}
+        class_info['serie'] = st.selectbox('Qual série? *', series_options[class_info['escolaridade']],
+                                           index=None, placeholder=f'Qual série do {class_info["escolaridade"]}?')
+        class_info['turma'] = st.text_input('Turma *')
+
+# Quando o usuário clica no botão "Cadastrar Turma"
+
+    if class_info['escolaridade'] and class_info['serie'] and class_info['turma']:
+        if st.button("Cadastrar Turma"):
+            if not os.path.exists('./banco_dados/turmas.csv'):
+                classes_df = pd.DataFrame(columns=['school_id', 'class_id', 'turma', 'escolaridade', 'serie'])
+            else:
+                classes_df = pd.read_csv('./banco_dados/turmas.csv')
+                if 'school_id' not in classes_df.columns:
+                    classes_df['school_id'] = pd.Series(dtype='str')
+            if 'turma' in class_info and class_info['turma']:
+                if class_info['turma'] in classes_df.loc[classes_df['school_id'] == school_id, 'turma'].values:
+                    st.error('Turma já cadastrada para essa Escola.')
+                else:
+                    save_class(school_id, class_info)
+
+
+./src/cadastro_aluno.py
+
+import streamlit as st
+import pandas as pd
+import os
+import datetime
+
+# Função para salvar as informações do aluno no arquivo CSV
+def save_student(results_df, student_info):
+    '''
+    Cria uma nova linha com as informações do aluno e adiciona ao DataFrame - 2
+    Reorganiza as colunas para tornar 'student_id', 'school_id' e 'class_id' as primeiras colunas - 3
+    Salva o DataFrame atualizado como um arquivo CSV - 4
+    '''
+    new_row = pd.DataFrame(student_info, index=[0])  #2
+    results_df = pd.concat([results_df, new_row], ignore_index=True)  #2
+    cols = ['school_id', 'class_id'] + [col for col in results_df.columns if col not in ['school_id', 'class_id']] #3
+    results_df = results_df[cols] #3
+    results_df.to_csv('./banco_dados/alunos.csv', index=False) #4
+    return None
+
+def register_student():
+    '''
+    Verifica se os arquivos CSV das escolas e turmas existem antes de tentar carregá-los.
+    Em seguida, carrega os arquivos CSV das escolas e turmas. 
+    Depois cria um dicionário para mapear os IDs e os nomes de cada escola, 
+    assim permite ao usuário selecionar uma escola das opções disponíveis.
+    Por fim, habilita o usuário a inserir as informações do aluno, então essas informações são salvas no csv.
+    '''
+    if not os.path.exists('./banco_dados/escolas.csv') or not os.path.exists('./banco_dados/turmas.csv'):
+        st.error('Sem escola ou turma cadastradas ainda.')
+        return
+
+    schools_df = pd.read_csv('./banco_dados/escolas.csv')
+    classes_df = pd.read_csv('./banco_dados/turmas.csv')
+
+    school_dict = pd.Series(schools_df.school_id.values, index=schools_df['nome']).to_dict()
+
+    selected_school_name = st.selectbox('Selecione a Escola', list(school_dict.keys()), index=None, placeholder='Escolha uma opção')
+    telefone = ''
+    student_info = {'nome': '', 'sexo': '', 'nascimento': '', 'telefone': ''}
+
+    if selected_school_name:
+        school_id = school_dict[selected_school_name]
+         
+        # Filtra as turmas com base na escola selecionada
+        filtered_classes_df = classes_df[classes_df['school_id'] == school_id]
+        class_dict = pd.Series(filtered_classes_df.class_id.values,
+        index='Ensino '+ filtered_classes_df['escolaridade'].astype(str) + ' - Série ' + filtered_classes_df['serie'].astype(str) + ' - Turma ' + filtered_classes_df['turma'].astype(str)).to_dict()
+
+        selected_class_name = st.selectbox('Selecione a Turma', list(class_dict.keys()),index=None, placeholder='Escolha uma opção')
+        if selected_class_name:
+            class_id = class_dict[selected_class_name]
+            student_info['school_id'] = school_id
+            student_info['class_id'] = class_id
+            student_info['nome'] = st.text_input('Nome do Aluno *')
+            student_info['sexo'] = st.selectbox('Sexo *', ['Masculino', 'Feminino'], index=None, placeholder='Escolha uma opção')
+            student_info['nascimento'] = st.date_input('Data de nascimento *', min_value=datetime.date(1900,1,1))
+            telefone = st.text_input('Telefone', max_chars=11)
+            erro_telefone = False
+            if not telefone.isdigit() and telefone != '':
+                st.error('Por favor, insira apenas números para o telefone.')
+                erro_telefone = True
+            else:
+                student_info['telefone'] = telefone
+
+        # Verifica se os campos obrigatórios estão preenchidos e se não há erro de telefone
+        if student_info['nome'] and student_info['sexo'] and student_info['nascimento']:
+            
+            if st.button("Cadastrar Aluno"):
+                if not os.path.exists('./banco_dados/alunos.csv'):
+                    students_df = pd.DataFrame(columns=['school_id', 'class_id', 'nome', 'sexo', 'nascimento', 'telefone'])
+                else:
+                    students_df = pd.read_csv('./banco_dados/alunos.csv')
+                    if 'school_id' not in students_df.columns:
+                        students_df['school_id'] = pd.Series(dtype='str')
+                if 'nome' in student_info and student_info['nome']:
+                    if student_info['nome'] in students_df.loc[students_df['school_id'] == school_id, 'nome'].values:
+                        st.error('Esse aluno já está cadastrado na Escola.')
+                    else:
+                        save_student(students_df, student_info)
+
+
+
+./src/cadastro_aula.py
+
+# Importa as bibliotecas necessárias
+import streamlit as st
+import pandas as pd
+import os
+import uuid
+from fpdf import FPDF
+from src.cadastro_turmas import register_class
+
+# Função para salvar informações da aula
+def save_lesson(lesson_info):
+    unique_id = str(uuid.uuid4())  # Gera um ID único
+    lesson_info['lesson_id'] = unique_id  # Adiciona o ID único ao dicionário lesson_info
+
+    # Verifica se o arquivo 'aulas.csv' existe
+    if os.path.exists('./banco_dados/aulas.csv'):
+        # Se existir, carrega o arquivo
+        lessons_df = pd.read_csv('./banco_dados/aulas.csv')
+    else:
+        # Se não existir, cria um novo DataFrame com as colunas especificadas e salva como 'aulas.csv'
+        lessons_df = pd.DataFrame(columns=list(lesson_info.keys()))
+        lessons_df.to_csv('./banco_dados/aulas.csv', index=False)
+
+    # Cria uma nova linha com as informações da aula e adiciona ao DataFrame
+    new_row = pd.DataFrame(lesson_info, index=[0])
+    lessons_df.loc[len(lessons_df)] = new_row.iloc[0]
+
+    # Reorganiza as colunas para tornar 'lesson_id' a primeira coluna
+    cols = ['lesson_id'] + [col for col in lessons_df.columns if col != 'lesson_id']
+    lessons_df = lessons_df[cols]
+
+    # Salva o DataFrame atualizado como 'aulas.csv'
+    lessons_df.to_csv('./banco_dados/aulas.csv', index=False)
+    return None
+
+# Função para criar um PDF com as informações da aula
+def create_lesson_pdf(lesson_info):
+    pdf = FPDF()
+
+    pdf.add_page()
+
+    pdf.set_font("Arial", size=12)
+    
+    for key, value in lesson_info.items():
+        if key != 'lesson_id':
+            # Converte o valor em string antes de adicioná-lo ao PDF
+            pdf.cell(200, 10, txt=key + ": " + str(value), ln=True)
+
+    pdf.output("./banco_dados/" + lesson_info['lesson_id'] + ".pdf")
+
+# Página de cadastro de aulas do aplicativo Streamlit
+def register_lesson():
+    """Cria uma página de cadastro de aulas usando a biblioteca Streamlit.
+
+    Returns:
+        None
+    """
+    
+    lesson_info = {}
+
+    series_options = {'Fundamental 1': ['1° Ano','2° Ano', '3° Ano','4° Ano','5° Ano'],
+                          'Fundamental 2': ['6° Ano','7° Ano', '8° Ano','9° Ano'],
+                          'Médio': ['1° Ano','2° Ano','3° Ano']}
+    
+    st.markdown ('### I. Identificação')
+    lesson_info['professor'] = st.text_input('Nome do Professor')
+    lesson_info['disciplina'] = st.selectbox('Disciplina', ['Portugês', 'Matemática', 'Biologia', 'Química',
+                                                            'Física', 'Ciências'], index=None, 
+                                                            placeholder='Selecione uma opção')
+    lesson_info['nivel_ensino'] = st.selectbox('Nível de Ensino', ['Fundamental 1', 'Fundamental 2', 'Ensino Médio'],index=None, 
+                                                            placeholder='Selecione uma opção' )
+    
+    if lesson_info['nivel_ensino'] == 'Fundamental 1':
+        lesson_info['serie'] = st.selectbox('Série', series_options['Fundamental 1'],index=None, 
+                                            placeholder='Selecione uma opção' )
+
+    if lesson_info['nivel_ensino'] == 'Fundamental 2':
+        lesson_info['serie'] = st.selectbox('Série', series_options['Fundamental 2'],index=None, 
+                                            placeholder='Selecione uma opção' )
+        
+    if lesson_info['nivel_ensino'] == 'Ensino Médio':
+        lesson_info['serie'] = st.selectbox('Série', series_options['Ensino Médio'],index=None, 
+                                            placeholder='Selecione uma opção' )
+        
+
+    lesson_info['data'] = st.text_input('Data')   
+    lesson_info['escola'] = st.text_input('Nome da Escola')
+
+    st.markdown ('### II. Tema da Aula')
+    lesson_info['titulo_da_aula'] = st.text_input('Título da Aula')
+
+    st.markdown('### III. Objetivo Geral')    
+    lesson_info['objetivos_da_aula'] = st.text_area('Objetivos da Aula')
+    
+    st.markdown('### IV. Introdução') 
+    lesson_info['conteudo_da_aula'] = st.text_area('Conteúdo da Aula')
+    
+    st.markdown('### V. Desenvolvimento')
+    lesson_info['metodos_de_ensino'] = st.text_area('Métodos de Ensino')
+    lesson_info['recursos_necessarios'] = st.text_area('Recursos Necessários')
+    
+    st.markdown('### Avaliação')
+    lesson_info['avaliacao_e_feedback'] = st.text_area('Avaliação e Feedback')
+    lesson_info['observacoes'] = st.text_area('Observações')
+
+    uploaded_file = st.file_uploader("Escolha um arquivo")
+    
+    if uploaded_file is not None:
+        with open(os.path.join("./banco_dados/", uploaded_file.name), "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        st.success("Arquivo salvo em ./banco_dados/")
+
+    if st.button("Cadastrar Aula"):
+        save_lesson(lesson_info)
+        create_lesson_pdf(lesson_info)
+        st.success("Aula cadastrada com sucesso!")
+
+
+
+
+
+
